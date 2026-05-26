@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import os
+import secrets
 import subprocess
 import tempfile
 import uuid
@@ -11,7 +13,8 @@ load_dotenv()
 
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.requests import Request
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -25,6 +28,36 @@ class EditSlideRequest(BaseModel):
 
 
 app = FastAPI(title="PPT Generator API", version="0.1.0")
+
+# ── Basic Auth ────────────────────────────────────────────────────────────────
+# Set APP_PASSWORD (and optionally APP_USERNAME) as env vars to enable.
+# If APP_PASSWORD is not set the app runs open (fine for local dev).
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    password = os.getenv("APP_PASSWORD", "")
+    if not password:
+        # No password configured → allow everything (local dev)
+        return await call_next(request)
+
+    username = os.getenv("APP_USERNAME", "admin")
+    auth = request.headers.get("Authorization", "")
+
+    if auth.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth[6:]).decode("utf-8")
+            given_user, given_pass = decoded.split(":", 1)
+            user_ok = secrets.compare_digest(given_user, username)
+            pass_ok = secrets.compare_digest(given_pass, password)
+            if user_ok and pass_ok:
+                return await call_next(request)
+        except Exception:
+            pass
+
+    return Response(
+        content="Unauthorized",
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="PPT Generator"'},
+    )
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 # Allow all origins so Vite dev server (any port) and the production host work.
