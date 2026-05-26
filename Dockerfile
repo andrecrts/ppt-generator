@@ -13,11 +13,12 @@ RUN npm run build
 FROM python:3.12-slim
 
 # System deps:
-#   - poppler-utils  → pdftoppm (slide thumbnail generation)
+#   - libreoffice    → PPTX → PDF conversion for slide thumbnails
+#   - poppler-utils  → pdftoppm (PDF → PNG per slide)
 #   - curl           → healthcheck in Render
-# LibreOffice is intentionally omitted on the free tier (too large / too much RAM).
-# Thumbnails fall back to CSS mocks gracefully when the binary is absent.
+# Using --no-install-recommends keeps the image lean (~800 MB vs ~1.5 GB full install).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice \
     poppler-utils \
     curl \
  && rm -rf /var/lib/apt/lists/*
@@ -36,7 +37,7 @@ COPY --from=frontend-build /app/frontend/dist ./static
 
 # pdftoppm lives at /usr/bin/pdftoppm on Debian/Ubuntu
 ENV PDFTOPPM_PATH=/usr/bin/pdftoppm
-# SOFFICE_PATH is intentionally unset (LibreOffice not installed on free tier)
+ENV SOFFICE_PATH=/usr/bin/soffice
 
 # Render sets $PORT; default to 8000 for local Docker runs
 ENV PORT=8000
