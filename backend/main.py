@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from classifier import classify_to_slides, edit_single_slide
+from image_fetcher import fetch_image
 from pdf_extractor import extract_course_name, extract_pages
 from slide_builder import build_presentation
 
@@ -70,7 +71,7 @@ app.add_middleware(
 )
 
 # ── Temp file store ───────────────────────────────────────────────────────────
-# Maps file_id → {path, filename, thumb_count, slides, course_name, author_name}
+# Maps file_id → {path, filename, thumb_count, slides, course_name, author_name, images}
 _file_store: dict[str, dict] = {}
 
 TEMP_DIR = Path(tempfile.gettempdir()) / "pptgen_files"
@@ -185,8 +186,20 @@ async def generate_presentation(
         if not slides:
             raise HTTPException(status_code=422, detail="Claude could not generate slide content from this PDF.")
 
+        # ── Step 3b: Pre-fetch images (best-effort, concurrent) ──────────────
+        loop = asyncio.get_running_loop()
+        async def _fetch_all(slides):
+            tasks = [
+                loop.run_in_executor(None, lambda q=s.image_query: fetch_image(q) if q else None)
+                for s in slides
+            ]
+            return await asyncio.gather(*tasks)
+
+        raw_images = await _fetch_all(slides)
+        slide_images = {i: b for i, b in enumerate(raw_images) if b is not None}
+
         # ── Step 3: Build the .pptx ───────────────────────────────────────
-        pptx_bytes = build_presentation(slides, course_name=course_name, author_name=author_name)
+        pptx_bytes = build_presentation(slides, course_name=course_name, author_name=author_name, images=slide_images)
 
         # ── Step 4: Save to temp and register ────────────────────────────
         file_id = uuid.uuid4().hex
@@ -202,6 +215,7 @@ async def generate_presentation(
             "slides":      slides,
             "course_name": course_name,
             "author_name": author_name,
+            "images":      slide_images,   # dict[int, bytes] for rebuild on edit
         }
 
         # ── Step 5: Generate slide thumbnails (best-effort) ──────────────
@@ -291,10 +305,12 @@ async def edit_slide_endpoint(file_id: str, index: int, body: EditSlideRequest):
     updated_slides[index - 1] = edited
     info["slides"] = updated_slides
 
+    slide_images = info.get("images", {})
     pptx_bytes = build_presentation(
         updated_slides,
         course_name=info.get("course_name", ""),
         author_name=info.get("author_name", ""),
+        images=slide_images,
     )
     out_path: Path = info["path"]
     out_path.write_bytes(pptx_bytes)

@@ -64,6 +64,11 @@ cuando sea posible.
 (no mezcles "•" con "1." en la misma diapositiva).
 - Si el PDF incluye numeración (1-, 2-, 3-…) consérvala tal como aparece.
 - Omite metadatos residuales aislados (fechas sueltas, nombre del docente suelto, etc.).
+- `image_query`: set short English search keywords (2-4 words) for slides that benefit from a visual:
+    • Always set on `section_header` slides.
+    • Set on every 3rd `content` slide approximately, or when the content has a strong visual concept.
+    • Leave empty on `title` slides and on content slides that are mainly lists of short bullets.
+    • Use educational/academic imagery keywords (e.g. "classroom children learning", "family parenting", "social media teenagers").
 """
 
 
@@ -72,6 +77,7 @@ class Slide:
     slide_type: str           # "title" | "section_header" | "content"
     title: str
     bullets: List[str] = field(default_factory=list)
+    image_query: str = ""
 
 
 _EDIT_TOOL_SCHEMA = {
@@ -127,6 +133,10 @@ _TOOL_SCHEMA = {
                                 "Lista de puntos clave. "
                                 "Vacío para section_header y title."
                             ),
+                        },
+                        "image_query": {
+                            "type": "string",
+                            "description": "Short English keywords for an Unsplash image search relevant to this slide (e.g. 'family children education'). Empty string for slides that don't need an image.",
                         },
                     },
                     "required": ["slide_type", "title", "bullets"],
@@ -185,6 +195,7 @@ def classify_to_slides(pages_text: List[str], course_name: str = "") -> List[Sli
                     slide_type=s.get("slide_type", "content"),
                     title=s.get("title", ""),
                     bullets=s.get("bullets", []),
+                    image_query=s.get("image_query", ""),
                 )
                 for s in raw_slides
             ]
@@ -246,6 +257,7 @@ def edit_single_slide(slide: Slide, instruction: str) -> Slide:
                 slide_type=data.get("slide_type", slide.slide_type),
                 title=data.get("title", slide.title),
                 bullets=data.get("bullets", slide.bullets),
+                image_query=slide.image_query,   # ← preserve original
             )
 
     return slide  # fallback: return original unchanged

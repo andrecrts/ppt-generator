@@ -14,13 +14,14 @@ UPANA formatting rules applied:
 """
 
 import io
+from io import BytesIO
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from lxml import etree
 from pptx import Presentation
 from pptx.oxml.ns import qn
-from pptx.util import Pt
+from pptx.util import Inches, Pt
 
 from classifier import Slide
 
@@ -96,16 +97,41 @@ def _add_title_slide(prs: Presentation, title: str, subtitle: str = "", author: 
             ph.text = combined_subtitle
 
 
-def _add_section_slide(prs: Presentation, title: str) -> None:
+def _add_section_slide(prs: Presentation, title: str, img_bytes: Optional[bytes] = None) -> None:
     slide = prs.slides.add_slide(_get_layout(prs, _LAYOUT_SECTION))
     for ph in slide.placeholders:
         if ph.placeholder_format.idx == 0:
             ph.text = title
 
+    if img_bytes:
+        pic = slide.shapes.add_picture(
+            BytesIO(img_bytes),
+            left=Inches(5.5),
+            top=Inches(0.3),
+            width=Inches(4.2),
+            height=Inches(6.5),
+        )
+        # Move image to the back of the z-order (behind title text)
+        sp = pic._element
+        spTree = slide.shapes._spTree
+        spTree.remove(sp)
+        spTree.insert(2, sp)  # 2 = behind other shapes but above background
 
-def _add_content_slide(prs: Presentation, title: str, bullets: List[str]) -> None:
+
+def _add_content_slide(prs: Presentation, title: str, bullets: List[str], img_bytes: Optional[bytes] = None) -> None:
     slide = prs.slides.add_slide(_get_layout(prs, _LAYOUT_CONTENT))
     font_size = _FONT_BODY_COMPACT if len(bullets) > _COMPACT_THRESHOLD else _FONT_BODY
+
+    IMG_LEFT = 6.4  # inches
+
+    # Narrow the content placeholder to avoid overlap with the image
+    if img_bytes:
+        for ph in slide.placeholders:
+            if ph.placeholder_format.idx == 1:
+                ph.left   = Inches(0.688)
+                ph.top    = Inches(2.074)
+                ph.width  = Inches(IMG_LEFT - 0.8)  # = 5.6"
+                ph.height = Inches(4.832)
 
     for ph in slide.placeholders:
         idx = ph.placeholder_format.idx
@@ -124,18 +150,30 @@ def _add_content_slide(prs: Presentation, title: str, bullets: List[str]) -> Non
                 for run in para.runs:
                     run.font.size = font_size
 
+    # Add the picture AFTER setting placeholder dimensions
+    if img_bytes:
+        slide.shapes.add_picture(
+            BytesIO(img_bytes),
+            left=Inches(IMG_LEFT),
+            top=Inches(2.5),
+            width=Inches(3.3),
+            height=Inches(3.5),
+        )
+
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_presentation(slides: List[Slide], course_name: str = "", author_name: str = "") -> bytes:
+def build_presentation(slides: List[Slide], course_name: str = "", author_name: str = "", images: dict = None) -> bytes:
     """
     Build a .pptx from a list of Slide objects using the EDU Template.
 
     Args:
         slides:      Classified slide list from classifier.py.
         course_name: Optional subtitle shown on the title slide.
+        author_name: Optional author / teacher name.
+        images:      Optional dict mapping slide index (0-based) to image bytes.
 
     Returns:
         Raw bytes of the generated .pptx file.
@@ -143,14 +181,17 @@ def build_presentation(slides: List[Slide], course_name: str = "", author_name: 
     prs = Presentation(str(TEMPLATE_PATH))
     _remove_all_slides(prs)
 
-    for slide in slides:
+    images = images or {}
+
+    for i, slide in enumerate(slides):
+        img_bytes = images.get(i)
         if slide.slide_type == "title":
             _add_title_slide(prs, slide.title, subtitle=course_name, author=author_name)
         elif slide.slide_type == "section_header":
-            _add_section_slide(prs, slide.title)
+            _add_section_slide(prs, slide.title, img_bytes=img_bytes)
         else:
             # "content" or any unknown type → content slide
-            _add_content_slide(prs, slide.title, slide.bullets)
+            _add_content_slide(prs, slide.title, slide.bullets, img_bytes=img_bytes)
 
     buf = io.BytesIO()
     prs.save(buf)
