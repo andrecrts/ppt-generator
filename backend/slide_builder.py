@@ -97,19 +97,27 @@ def _add_title_slide(prs: Presentation, title: str, subtitle: str = "", author: 
             ph.text = combined_subtitle
 
 
+_IMG_LEFT_SECTION = 5.5   # inches — image starts here on section slides
+
 def _add_section_slide(prs: Presentation, title: str, img_bytes: Optional[bytes] = None) -> None:
     slide = prs.slides.add_slide(_get_layout(prs, _LAYOUT_SECTION))
     for ph in slide.placeholders:
         if ph.placeholder_format.idx == 0:
+            if img_bytes:
+                # Constrain title to the left column so it never overlaps the photo
+                ph.left   = Inches(0.5)
+                ph.top    = Inches(1.8)
+                ph.width  = Inches(_IMG_LEFT_SECTION - 0.9)   # ≈ 4.6" — ends before image
+                ph.height = Inches(4.0)
             ph.text = title
 
     if img_bytes:
         pic = slide.shapes.add_picture(
             BytesIO(img_bytes),
-            left=Inches(5.5),
-            top=Inches(0.3),
-            width=Inches(4.2),
-            height=Inches(6.5),
+            left=Inches(_IMG_LEFT_SECTION),
+            top=Inches(0.0),
+            width=Inches(4.5),
+            height=Inches(7.5),   # full slide height for a dramatic bleed
         )
         # Move image to the back of the z-order (behind title text)
         sp = pic._element
