@@ -173,20 +173,30 @@ def _add_content_slide(prs: Presentation, title: str, bullets: List[str], img_by
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_presentation(slides: List[Slide], course_name: str = "", author_name: str = "", images: dict = None) -> bytes:
+def build_presentation(
+    slides: List[Slide],
+    course_name: str = "",
+    author_name: str = "",
+    images: dict = None,
+    template_path: Optional[Path] = None,
+) -> bytes:
     """
-    Build a .pptx from a list of Slide objects using the EDU Template.
+    Build a .pptx from a list of Slide objects.
 
     Args:
-        slides:      Classified slide list from classifier.py.
-        course_name: Optional subtitle shown on the title slide.
-        author_name: Optional author / teacher name.
-        images:      Optional dict mapping slide index (0-based) to image bytes.
+        slides:        Classified slide list from classifier.py.
+        course_name:   Optional subtitle shown on the title slide.
+        author_name:   Optional author / teacher name.
+        images:        Optional dict mapping slide index (0-based) to image bytes.
+        template_path: Optional path to a custom .pptx template.
+                       Falls back to the bundled EDU Template when not provided.
+                       The template must have compatible layouts at indices 0, 2, 5
+                       (Title Slide / Content / Section Header).
 
     Returns:
         Raw bytes of the generated .pptx file.
     """
-    prs = Presentation(str(TEMPLATE_PATH))
+    prs = Presentation(str(template_path or TEMPLATE_PATH))
     _remove_all_slides(prs)
 
     images = images or {}

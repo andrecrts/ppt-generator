@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from typing import Optional
+
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
@@ -154,6 +156,7 @@ def health():
 @router.post("/generate")
 async def generate_presentation(
     pdf: UploadFile = File(..., description="PDF course material"),
+    template: Optional[UploadFile] = File(default=None, description="Optional custom .pptx template"),
     course_name: str = Form(default="", description="Optional course name for the title slide"),
     author_name: str = Form(default="", description="Optional author / teacher name"),
 ):
@@ -166,6 +169,15 @@ async def generate_presentation(
 
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY is not configured on the server.")
+
+    # ── Save custom template (if provided) ───────────────────────────────────
+    custom_template_path: Optional[Path] = None
+    if template and (template.filename or "").lower().endswith(".pptx"):
+        tpl_bytes = await template.read()
+        if tpl_bytes:
+            tpl_path = TEMP_DIR / f"tpl_{uuid.uuid4().hex}.pptx"
+            tpl_path.write_bytes(tpl_bytes)
+            custom_template_path = tpl_path
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(await pdf.read())
@@ -199,7 +211,13 @@ async def generate_presentation(
         slide_images = {i: b for i, b in enumerate(raw_images) if b is not None}
 
         # ── Step 3: Build the .pptx ───────────────────────────────────────
-        pptx_bytes = build_presentation(slides, course_name=course_name, author_name=author_name, images=slide_images)
+        pptx_bytes = build_presentation(
+            slides,
+            course_name=course_name,
+            author_name=author_name,
+            images=slide_images,
+            template_path=custom_template_path,
+        )
 
         # ── Step 4: Save to temp and register ────────────────────────────
         file_id = uuid.uuid4().hex
@@ -209,13 +227,14 @@ async def generate_presentation(
         stem = Path(pdf.filename or "presentation").stem
         out_filename = f"{stem}_presentation.pptx"
         _file_store[file_id] = {
-            "path":        out_path,
-            "filename":    out_filename,
-            "thumb_count": 0,
-            "slides":      slides,
-            "course_name": course_name,
-            "author_name": author_name,
-            "images":      slide_images,   # dict[int, bytes] for rebuild on edit
+            "path":          out_path,
+            "filename":      out_filename,
+            "thumb_count":   0,
+            "slides":        slides,
+            "course_name":   course_name,
+            "author_name":   author_name,
+            "images":        slide_images,        # dict[int, bytes] for rebuild on edit
+            "template_path": custom_template_path, # None → use bundled EDU Template
         }
 
         # ── Step 5: Generate slide thumbnails (best-effort) ──────────────
@@ -311,6 +330,7 @@ async def edit_slide_endpoint(file_id: str, index: int, body: EditSlideRequest):
         course_name=info.get("course_name", ""),
         author_name=info.get("author_name", ""),
         images=slide_images,
+        template_path=info.get("template_path"),
     )
     out_path: Path = info["path"]
     out_path.write_bytes(pptx_bytes)

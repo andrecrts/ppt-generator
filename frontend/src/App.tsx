@@ -9,6 +9,7 @@ const API = '/api'
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null)
+  const [templateFile, setTemplateFile] = useState<File | null>(null)
   const [courseName, setCourseName] = useState('')
   const [authorName, setAuthorName] = useState('')
   const [appState, setAppState] = useState<AppState>('idle')
@@ -26,6 +27,7 @@ export default function App() {
 
     const formData = new FormData()
     formData.append('pdf', file)
+    if (templateFile) formData.append('template', templateFile)
     formData.append('course_name', courseName.trim())
     formData.append('author_name', authorName.trim())
 
@@ -52,7 +54,7 @@ export default function App() {
     setError(null)
     setFile(null)
     setCourseName('')
-    // keep authorName — user probably wants the same author next time
+    // keep authorName and templateFile — user probably wants the same author/template next time
   }
 
   return (
@@ -146,6 +148,8 @@ export default function App() {
                 onCourseChange={setCourseName}
                 authorName={authorName}
                 onAuthorChange={setAuthorName}
+                templateFile={templateFile}
+                onTemplateChange={setTemplateFile}
                 onGenerate={handleGenerate}
                 canGenerate={!!file}
                 disabled={isGenerating}

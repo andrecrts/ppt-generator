@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, ChangeEvent } from 'react'
 
 // ── localStorage helpers ────────────────────────────────────────────────────
 const COURSES_KEY = 'pptgen_recent_courses'   // string[], max 3
@@ -30,6 +30,8 @@ interface Props {
   onCourseChange: (v: string) => void
   authorName: string
   onAuthorChange: (v: string) => void
+  templateFile: File | null
+  onTemplateChange: (f: File | null) => void
   onGenerate: () => void
   canGenerate: boolean
   disabled?: boolean
@@ -54,9 +56,12 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 6,
 }
 
+const TPL_INPUT_ID = 'template-file-input'
+
 export default function SettingsCard({
   courseName, onCourseChange,
   authorName, onAuthorChange,
+  templateFile, onTemplateChange,
   onGenerate, canGenerate, disabled,
 }: Props) {
   const [recentCourses, setRecentCourses] = useState<string[]>([])
@@ -164,16 +169,74 @@ export default function SettingsCard({
         />
       </div>
 
-      {/* ── Template badge ── */}
+      {/* ── Template upload ── */}
       <div style={{ marginBottom: 20 }}>
-        <label style={labelStyle}>Template</label>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          background: '#1a1a2e', border: '1px solid #2e2e4a',
-          color: '#a78bfa', borderRadius: 6, padding: '6px 12px', fontSize: 12,
-        }}>
-          🎨 EDU Template.pptx
-        </div>
+        <label style={labelStyle}>Template <span style={{ color: '#555570', fontWeight: 400 }}>(optional)</span></label>
+
+        {/* Hidden file input */}
+        <input
+          id={TPL_INPUT_ID}
+          type="file"
+          accept=".pptx"
+          style={{ display: 'none' }}
+          disabled={disabled}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+            const f = e.target.files?.[0]
+            if (f) onTemplateChange(f)
+            e.target.value = ''
+          }}
+        />
+
+        {templateFile ? (
+          /* Custom template selected */
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: '#111a2e', border: '1px solid #2e3a5a',
+            borderRadius: 8, padding: '8px 12px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+              <span style={{ fontSize: 16 }}>🎨</span>
+              <span style={{ fontSize: 12, color: '#a78bfa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {templateFile.name}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onTemplateChange(null)}
+              disabled={disabled}
+              style={{
+                flexShrink: 0, marginLeft: 8,
+                background: 'none', border: 'none',
+                color: '#6b6b80', fontSize: 16,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                lineHeight: 1, padding: '0 4px',
+              }}
+              title="Remove custom template"
+            >×</button>
+          </div>
+        ) : (
+          /* Default template — click to replace */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: '#1a1a2e', border: '1px solid #2e2e4a',
+              color: '#a78bfa', borderRadius: 6, padding: '6px 12px', fontSize: 12,
+            }}>
+              🎨 EDU Template.pptx
+            </div>
+            <label
+              htmlFor={TPL_INPUT_ID}
+              style={{
+                fontSize: 12, color: '#555570',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                textDecoration: 'underline', textUnderlineOffset: 3,
+                opacity: disabled ? 0.5 : 1,
+              }}
+            >
+              Replace
+            </label>
+          </div>
+        )}
       </div>
 
       {/* ── Generate button ── */}
