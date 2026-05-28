@@ -9,6 +9,7 @@ const API = '/api'
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null)
+  const [templateId, setTemplateId] = useState('edu1')  // default to first bundled template
   const [templateFile, setTemplateFile] = useState<File | null>(null)
   const [courseName, setCourseName] = useState('')
   const [authorName, setAuthorName] = useState('')
@@ -27,7 +28,11 @@ export default function App() {
 
     const formData = new FormData()
     formData.append('pdf', file)
-    if (templateFile) formData.append('template', templateFile)
+    if (templateFile) {
+      formData.append('template', templateFile)
+    } else {
+      formData.append('template_id', templateId)
+    }
     formData.append('course_name', courseName.trim())
     formData.append('author_name', authorName.trim())
 
@@ -148,6 +153,8 @@ export default function App() {
                 onCourseChange={setCourseName}
                 authorName={authorName}
                 onAuthorChange={setAuthorName}
+                templateId={templateId}
+                onTemplateIdChange={setTemplateId}
                 templateFile={templateFile}
                 onTemplateChange={setTemplateFile}
                 onGenerate={handleGenerate}

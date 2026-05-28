@@ -144,6 +144,32 @@ async def _generate_thumbnails(pptx_path: Path, file_id: str) -> int:
         return 0
 
 
+# ── Bundled templates ─────────────────────────────────────────────────────────
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+# Ordered list of bundled templates; first one is the default.
+# Each entry: (id, display_name, filename)
+_BUNDLED_TEMPLATES: list[tuple[str, str, str]] = [
+    ("edu1", "EDU Template",   "EDU Template.pptx"),
+    ("edu2", "EDU Template 2", "EDU Template_2.pptx"),
+]
+
+
+def _resolve_template_path(
+    template_id: Optional[str],
+    custom_path: Optional[Path],
+) -> Optional[Path]:
+    """Return the template Path to use, or None to fall back to slide_builder default."""
+    if custom_path and custom_path.exists():
+        return custom_path
+    if template_id:
+        for tid, _name, fname in _BUNDLED_TEMPLATES:
+            if tid == template_id:
+                p = TEMPLATES_DIR / fname
+                return p if p.exists() else None
+    return None   # slide_builder will use its own default (EDU Template 1)
+
+
 # ── API routes (all under /api so the same paths work in dev and production) ──
 router = APIRouter(prefix="/api")
 
@@ -153,10 +179,21 @@ def health():
     return {"status": "ok", "message": "PPT Generator API running"}
 
 
+@router.get("/templates")
+def list_templates():
+    """Return the bundled templates available for selection."""
+    return [
+        {"id": tid, "name": name, "filename": fname}
+        for tid, name, fname in _BUNDLED_TEMPLATES
+        if (TEMPLATES_DIR / fname).exists()
+    ]
+
+
 @router.post("/generate")
 async def generate_presentation(
     pdf: UploadFile = File(..., description="PDF course material"),
     template: Optional[UploadFile] = File(default=None, description="Optional custom .pptx template"),
+    template_id: str = Form(default="", description="ID of a bundled template (e.g. 'edu1', 'edu2')"),
     course_name: str = Form(default="", description="Optional course name for the title slide"),
     author_name: str = Form(default="", description="Optional author / teacher name"),
 ):
@@ -170,14 +207,16 @@ async def generate_presentation(
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY is not configured on the server.")
 
-    # ── Save custom template (if provided) ───────────────────────────────────
-    custom_template_path: Optional[Path] = None
+    # ── Resolve template: custom upload > bundled id > default ───────────────
+    custom_upload_path: Optional[Path] = None
     if template and (template.filename or "").lower().endswith(".pptx"):
         tpl_bytes = await template.read()
         if tpl_bytes:
             tpl_path = TEMP_DIR / f"tpl_{uuid.uuid4().hex}.pptx"
             tpl_path.write_bytes(tpl_bytes)
-            custom_template_path = tpl_path
+            custom_upload_path = tpl_path
+
+    resolved_template_path = _resolve_template_path(template_id.strip() or None, custom_upload_path)
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(await pdf.read())
@@ -216,7 +255,7 @@ async def generate_presentation(
             course_name=course_name,
             author_name=author_name,
             images=slide_images,
-            template_path=custom_template_path,
+            template_path=resolved_template_path,
         )
 
         # ── Step 4: Save to temp and register ────────────────────────────
@@ -233,8 +272,8 @@ async def generate_presentation(
             "slides":        slides,
             "course_name":   course_name,
             "author_name":   author_name,
-            "images":        slide_images,        # dict[int, bytes] for rebuild on edit
-            "template_path": custom_template_path, # None → use bundled EDU Template
+            "images":        slide_images,           # dict[int, bytes] for rebuild on edit
+            "template_path": resolved_template_path, # None → slide_builder default
         }
 
         # ── Step 5: Generate slide thumbnails (best-effort) ──────────────

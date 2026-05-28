@@ -1,3 +1,9 @@
+export interface BundledTemplate {
+  id: string
+  name: string
+  filename: string
+}
+
 export type SlideType = 'title' | 'section_header' | 'content'
 
 export interface SlideData {
